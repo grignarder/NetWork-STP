@@ -1,4 +1,4 @@
-import java.io.*;
+﻿import java.io.*;
 import java.net.*;
 
 /**
@@ -40,11 +40,10 @@ public class SendExecutor implements Runnable{
         }catch(Exception e){
             System.out.println(INPUT_ERROR_MSG);
         }
+        this.init();//init socket
     }
 
     public void go(){
-
-        this.init();//init socket
 
         getConnection();//getconnected
 
@@ -86,21 +85,20 @@ public class SendExecutor implements Runnable{
     }
 
     public void getConnection(){
-        ;
+//        STPsegement STPforSYN= new STPsegement(new byte[0], true,false,0,0)
     }
 
     @Override
     public void run() {
         //listen ACK thread
-        DatagramPacket rcvPacket = new DatagramPacket(this.inbuffer,this.inbuffer.length);
+
         while(true){
             try {
+                DatagramPacket rcvPacket = new DatagramPacket(this.inbuffer,this.inbuffer.length);
                 this.udpSocket.receive(rcvPacket);
                 System.out.println(new String(rcvPacket.getData()));
             } catch (IOException e) {
                 e.printStackTrace();
-            } catch(NullPointerException e){
-                ;
             }
         }
 
@@ -108,3 +106,4 @@ public class SendExecutor implements Runnable{
     }
 
 }
+
