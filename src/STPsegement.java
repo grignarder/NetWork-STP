@@ -75,6 +75,10 @@ public class STPsegement {
         return this.data;
     }
 
+    public int getDataLength(){
+        return this.data.length;
+    }
+
     public boolean getSYN(){
         return this.header[0] == 1;
     }
@@ -84,13 +88,21 @@ public class STPsegement {
     }
 
     public int getSeq(){
-        int seq = ((header[2]&0xff)<<24) + ((header[3]&0xff)<<16) + ((header[4]&0xff)<<8) + header[5]&0xff;
-        return seq;
+        int seq[] = new int[4];
+        seq[0] = ((header[2]&0xff)<<24);
+        seq[1] = ((header[3]&0xff)<<16);
+        seq[2] = ((header[4]&0xff)<<8);
+        seq[3] =  header[5]&0xff;
+        return seq[0]+seq[1]+seq[2]+seq[3];
     }
 
     public int getAck(){
-        int ack = ((header[6]&0xff)<<24) + ((header[7]&0xff)<<16) + ((header[8]&0xff)<<8) + header[9]&0xff;
-        return ack;
+        int ack[] = new int[4];
+        ack[0] = ((header[6]&0xff)<<24);
+        ack[1] = ((header[7]&0xff)<<16);
+        ack[2] = ((header[8]&0xff)<<8);
+        ack[3] =  header[9]&0xff;
+        return ack[0]+ack[1]+ack[2]+ack[3];
     }
 
     public byte[] getByteArray(){

@@ -23,12 +23,16 @@ public class SendExecutor implements Runnable{
     private boolean isSYNed = false;
     private int seq = 100;//init seq
     private int ack = 0;
+    private int rcvAck = -1;
+    private boolean getFined = false;
+
 
     //MSG
     private static String INPUT_ERROR_MSG="usage: java Sender <receiver_host_ip> <receiver_port> <file.txt> <MSS>";
+    private static int STPheaderSize = 10;
 
 
-    public SendExecutor(String args[]){
+    public SendExecutor(String args[]) throws SocketException, UnknownHostException {
         //read params
         if(args.length!=4){
             System.out.println(INPUT_ERROR_MSG);
@@ -39,92 +43,95 @@ public class SendExecutor implements Runnable{
             this.filename = args[2];
             this.MSS = Integer.parseInt(args[3]);
             this.outbuffer = new byte[this.MSS];
-            this.inbuffer = new byte[this.MSS+10];
+            this.inbuffer = new byte[this.MSS+STPheaderSize];
         }catch(Exception e){
             System.out.println(INPUT_ERROR_MSG);
         }
-        this.init();//init socket
+        this.init();//init sth
     }
 
-    public void go(){
-
-        getConnection();//getconnected
-
-        //get the STP segment
-        try {
-            BufferedInputStream bis = new BufferedInputStream(new FileInputStream(this.filename));
-
-            while(bis.read(this.outbuffer,0,this.outbuffer.length)!=-1){
-                ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                baos.write(this.outbuffer,0,this.outbuffer.length);
-                this.send(baos.toByteArray(),false,false,this.seq,0);
-            }
-
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-
-    public void init(){
-        try {
-            this.udpSocket = new DatagramSocket(this.sender_port,InetAddress.getByName(this.sender_ip));
-        } catch (UnknownHostException e) {
-            e.printStackTrace();
-        }catch (SocketException e) {
-            e.printStackTrace();
-        }
+    public void init() throws UnknownHostException, SocketException {
+        //init socket
+        this.udpSocket = new DatagramSocket(this.sender_port,InetAddress.getByName(this.sender_ip));
         //init logController
         this.logController = new LogController("src/sender_log.txt");
     }
 
-    public void getConnection(){
-        this.send(new byte[0],true,false,this.seq,0);
+    public void go() throws IOException {
+        getConnection();
+
+        BufferedInputStream bis = new BufferedInputStream(new FileInputStream(this.filename));
+        while(bis.read(this.outbuffer,0,this.outbuffer.length)!=-1){
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            baos.write(this.outbuffer,0,this.outbuffer.length);
+            this.send(baos.toByteArray(),false,false,this.seq,this.ack);
+        }
         while(true){
-            if(this.isSYNed){
-                this.seq++;
+            if(this.rcvAck == this.seq){
+                killConnection();
                 break;
             }
         }
-        this.send(new byte[0],false,false,this.seq,0);
+
     }
 
-    public void send(byte[] data, boolean isSYN, boolean isFIN , int seq, int ack){
-        STPsegement stpSegement = new STPsegement(data,isSYN,isFIN,seq,ack);
-        try {
-            DatagramPacket outPacket = new DatagramPacket(stpSegement.getByteArray(),
-                    stpSegement.getByteArray().length,InetAddress.getByName(this.receiver_host_ip),this.receiver_port);
-            this.udpSocket.send(outPacket);
-        } catch (UnknownHostException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
+    public void getConnection() throws IOException {
+        this.send(new byte[0],true,false,this.seq,0);//send SYN the first handshake
+        while(true){
+            synchronized (this){
+                if(this.isSYNed){
+                    this.seq++;
+                    this.send(new byte[0],false,false,this.seq,this.ack);//send the third handshake
+                    break;
+                }
+            }
         }
     }
 
+    public synchronized void send(byte[] data, boolean isSYN, boolean isFIN , int seq, int ack) throws IOException {
+        STPsegement stpSegement = new STPsegement(data,isSYN,isFIN,seq,ack);
+        DatagramPacket outPacket = new DatagramPacket(stpSegement.getByteArray(),
+                stpSegement.getByteArray().length,InetAddress.getByName(this.receiver_host_ip),this.receiver_port);
+        this.udpSocket.send(outPacket);
+        this.seq+=stpSegement.getDataLength();
+        //for debugging.....
+        System.out.println("seq:"+seq+" "+"ack:"+ack);
+        //for debugging.....
+    }
+
+    public void killConnection() throws IOException {
+        send(new byte[0],false,true,this.seq,this.ack); //F
+        this.seq+=1;
+        while(true){
+            if(this.getFined){//get F+A
+                this.send(new byte[0],false,false,this.seq,this.ack);
+                break;
+            }
+        }
+        System.out.println("end");
+        this.udpSocket.close();
+
+    }
 
     @Override
     public void run() {
         //listen ACK thread
-
-        while(true){
+        while(!this.getFined){
             try {
                 DatagramPacket rcvPacket = new DatagramPacket(this.inbuffer,this.inbuffer.length);
                 this.udpSocket.receive(rcvPacket);
                 STPsegement rcvSTPsegement = new STPsegement(rcvPacket.getData());
-                if(rcvSTPsegement.getSYN()){
+                if(rcvSTPsegement.getSYN()){//if is the second handshake
                     this.isSYNed = true;
-                }else{
-                    System.out.println(new String(rcvPacket.getData()));
+                }else if(rcvSTPsegement.getFIN()) {//if is FIN+ACK
+                    this.getFined = true;
+                } else{//if is normal ACK
+                    this.rcvAck = rcvSTPsegement.getAck();
                 }
+                this.ack = rcvSTPsegement.getSeq()+1;
             } catch (IOException e) {
                 e.printStackTrace();
             }
         }
-
-
     }
-
 }
