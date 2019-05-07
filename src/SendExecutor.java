@@ -1,4 +1,4 @@
-﻿import java.io.*;
+import java.io.*;
 import java.net.*;
 
 /**
@@ -20,6 +20,9 @@ public class SendExecutor implements Runnable{
     private String sender_ip = "localhost";
     private int sender_port = 8888;
     private LogController logController;
+    private boolean isSYNed = false;
+    private int seq = 100;//init seq
+    private int ack = 0;
 
     //MSG
     private static String INPUT_ERROR_MSG="usage: java Sender <receiver_host_ip> <receiver_port> <file.txt> <MSS>";
@@ -54,14 +57,7 @@ public class SendExecutor implements Runnable{
             while(bis.read(this.outbuffer,0,this.outbuffer.length)!=-1){
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 baos.write(this.outbuffer,0,this.outbuffer.length);
-
-                STPsegement stpSegemnt = new STPsegement(baos.toByteArray(),false,false,0,0);
-
-                //get the udp packet
-                DatagramPacket outPacket = new DatagramPacket(stpSegemnt.getByteArray(),
-                        stpSegemnt.getByteArray().length,InetAddress.getByName(this.receiver_host_ip),this.receiver_port);
-                //send the packet
-                this.udpSocket.send(outPacket);
+                this.send(baos.toByteArray(),false,false,this.seq,0);
             }
 
         } catch (FileNotFoundException e) {
@@ -81,12 +77,33 @@ public class SendExecutor implements Runnable{
             e.printStackTrace();
         }
         //init logController
-        this.logController = new LogController("src/log.txt");
+        this.logController = new LogController("src/sender_log.txt");
     }
 
     public void getConnection(){
-//        STPsegement STPforSYN= new STPsegement(new byte[0], true,false,0,0)
+        this.send(new byte[0],true,false,this.seq,0);
+        while(true){
+            if(this.isSYNed){
+                this.seq++;
+                break;
+            }
+        }
+        this.send(new byte[0],false,false,this.seq,0);
     }
+
+    public void send(byte[] data, boolean isSYN, boolean isFIN , int seq, int ack){
+        STPsegement stpSegement = new STPsegement(data,isSYN,isFIN,seq,ack);
+        try {
+            DatagramPacket outPacket = new DatagramPacket(stpSegement.getByteArray(),
+                    stpSegement.getByteArray().length,InetAddress.getByName(this.receiver_host_ip),this.receiver_port);
+            this.udpSocket.send(outPacket);
+        } catch (UnknownHostException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
 
     @Override
     public void run() {
@@ -96,7 +113,12 @@ public class SendExecutor implements Runnable{
             try {
                 DatagramPacket rcvPacket = new DatagramPacket(this.inbuffer,this.inbuffer.length);
                 this.udpSocket.receive(rcvPacket);
-                System.out.println(new String(rcvPacket.getData()));
+                STPsegement rcvSTPsegement = new STPsegement(rcvPacket.getData());
+                if(rcvSTPsegement.getSYN()){
+                    this.isSYNed = true;
+                }else{
+                    System.out.println(new String(rcvPacket.getData()));
+                }
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -106,4 +128,3 @@ public class SendExecutor implements Runnable{
     }
 
 }
-
