@@ -1,0 +1,4 @@
+1byte: SYN
+1byte: FIN
+4byte: seq
+4byte: ack
